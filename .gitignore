@@ -1,0 +1,54 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Ruff
+.ruff_cache/
+
+# JankHunter outputs (large; don't commit captured frames or generated reports)
+demo/*/frames/
+demo/*/defects.json
+demo/*/report.html
+*.html
+
+# Keep demo scenario files
+!demo/scenario.json
+!demo/*/scenario.json
+
+# Playwright browsers
+/ms-playwright/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# OS
+Thumbs.db
+
+# Secrets
+.env
+*.env

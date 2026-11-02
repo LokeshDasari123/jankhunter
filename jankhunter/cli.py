@@ -13,6 +13,7 @@ from jankhunter.detect.run import detect_all
 from jankhunter.fix.loop import FakeDiagnoser, Iteration, MuseSparkDiagnoser, run_fix_loop
 from jankhunter.models import Defect, Frame, Scenario, Track
 from jankhunter.report import write_report
+from jankhunter.tracking.meta_sam import MetaSAMTracker
 from jankhunter.tracking.mock import MockTracker
 
 app = typer.Typer(help="Find temporal visual bugs in canvas and game-style web UIs.")
@@ -22,7 +23,11 @@ def _load_scenario(path: Path) -> Scenario:
     return Scenario.model_validate_json(path.read_text(encoding="utf-8"))
 
 
-def _track(frames: list[Frame], scenario: Scenario) -> list[Track]:
+def _track(frames: list[Frame], scenario: Scenario, tracker: str) -> list[Track]:
+    if tracker == "meta-sam":
+        if not scenario.sam_prompts:
+            raise typer.BadParameter("Scenario must include sam_prompts for Meta SAM 3.1.")
+        return MetaSAMTracker().track(frames, scenario.sam_prompts)
     if not scenario.prompt_labels:
         raise typer.BadParameter("Scenario must include prompt_labels for MockTracker.")
     return MockTracker().track(frames, scenario.prompt_labels)
@@ -49,10 +54,13 @@ def detect_run(
     scenario: Path = typer.Argument(..., exists=True, readable=True),
     frames_dir: Path = typer.Option(..., "--frames", exists=True, file_okay=False),
     out: Path = typer.Option(Path("runs/detect"), "--out"),
+    tracker: str = typer.Option("mock", "--tracker", help="mock (fixture) or meta-sam (real visual tracking)."),
 ) -> None:
     """Run deterministic temporal defect detectors on a capture."""
     frames = load_frames(frames_dir)
-    tracks = _track(frames, _load_scenario(scenario))
+    if tracker not in {"mock", "meta-sam"}:
+        raise typer.BadParameter("--tracker must be 'mock' or 'meta-sam'.")
+    tracks = _track(frames, _load_scenario(scenario), tracker)
     defects, score = detect_all(tracks, frames)
     _write_detection(out, tracks, defects, score)
     typer.echo(f"Found {len(defects)} defects (score {score:.3f}); details: {out / 'defects.json'}")
@@ -63,7 +71,7 @@ def fix(
     scenario: Path = typer.Argument(..., exists=True, readable=True),
     out: Path = typer.Option(Path("runs/fix"), "--out"),
     offline: bool = typer.Option(False, "--offline", help="Use the deterministic demo fixture patch."),
-    max_iterations: int = typer.Option(3, min=1, max=3),
+    max_iterations: int = typer.Option(1, min=1, max=3, help="Maximum model repair attempts (1–3)."),
 ) -> None:
     """Run the bounded patch, rebuild, re-record, and verify workflow."""
     root = Path.cwd().resolve()
@@ -72,7 +80,8 @@ def fix(
     spec = _load_scenario(scenario)
     before_dir, after_dir = out / "before", out / "before"
     before_frames = capture(spec, before_dir)
-    before_tracks = _track(before_frames, spec)
+    tracker = "mock" if offline else "meta-sam"
+    before_tracks = _track(before_frames, spec, tracker)
     before_defects, before_score = detect_all(before_tracks, before_frames)
     _write_detection(out / "before", before_tracks, before_defects, before_score)
 
@@ -83,7 +92,7 @@ def fix(
         serial = sum(1 for p in out.glob("after-try-*")) + 1
         after_dir = out / f"after-try-{serial}"
         frames = capture(spec, after_dir)
-        tracks = _track(frames, spec)
+        tracks = _track(frames, spec, tracker)
         defects, score = detect_all(tracks, frames)
         latest.update(frames=frames, tracks=tracks, defects=defects, score=score)
         return defects, score

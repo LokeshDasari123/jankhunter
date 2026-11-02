@@ -135,3 +135,7 @@ class Scenario(BaseModel):
         default_factory=list,
         description="Human-readable element labels to pass to the tracker as prompts",
     )
+    sam_prompts: list[str] = Field(
+        default_factory=list,
+        description="Short SAM noun phrases; each phrase triggers one video request",
+    )

@@ -1,101 +1,105 @@
 # JankHunter
 
-**Temporal visual regression testing for canvas and game-style web interfaces.**
+**Find visual bugs in canvas interfaces by watching them over time.**
 
-JankHunter records a scripted browser session, tracks prompted visual elements, detects motion and visibility defects with deterministic rules, then can ask Muse Spark to propose a small patch and verify it against a fresh recording. This targets bugs that a DOM snapshot misses: a sprite that jitters, a HUD that jumps after fonts load, or an element that disappears for a few frames.
+A canvas or WebGL game can look correct in a screenshot while a sprite jitters, a HUD jumps after a font loads, or an object blinks out for a few frames. JankHunter records a scripted browser session, tracks named visual elements, and checks their movement and visibility with deterministic detectors. It can then ask Meta Muse Spark for a small code change and rerun the same scenario to check whether the measured defects improved.
 
-> Built during the Meta Global AI Developer Hackathon 2026 (Indie track).
+This project was built during the Meta Global AI Developer Hackathon 2026. It is an early prototype; see [Limits](#limits) before treating a result as proof of correctness.
 
-## Try it locally
+## Run the demo
 
-Requires Python 3.11+, Git, and a Playwright Chromium install.
-
-```powershell
-python -m pip install -e ".[dev]"
-python -m playwright install chromium
-python -m http.server 8080 --directory demo/buggy
-```
-
-In a second terminal from the repository root:
+Use Python 3.11, Git, and Windows PowerShell. The commands below keep packages inside a local virtual environment. Playwright's browser is installed once on the machine.
 
 ```powershell
-jankhunter capture demo/scenario.json --out runs/capture
-jankhunter detect demo/scenario.json --frames runs/capture --out runs/detect
+py -3.11 -m venv .venv
+.venv\Scripts\python.exe -m pip install -r requirements.txt
+.venv\Scripts\python.exe -m playwright install chromium
+.venv\Scripts\python.exe -m http.server 8080 --directory demo/buggy
 ```
 
-`MockTracker` reads the demo app's `gt.json` sidecar; it is a local development fixture, not visual perception. Use the included offline repair fixture to exercise the complete branch and verification flow without an API key:
+In a second terminal, from the repository root:
 
 ```powershell
-jankhunter fix demo/scenario.json --offline --out runs/fix
+.venv\Scripts\python.exe -m jankhunter.cli capture demo/scenario.json --out runs/capture
+.venv\Scripts\python.exe -m jankhunter.cli detect demo/scenario.json --frames runs/capture --out runs/detect
 ```
 
-The scenario URL defaults to `http://localhost:8080`. Serve `demo/buggy` on that port for the planted bugs; to inspect the clean reference serve `demo/app` or `demo/fixed` instead.
-
-## Muse Spark repair
-
-Put `MODEL_API_KEY=...` in the local `.env` file (already ignored by Git), or set it in the process environment, then run `jankhunter fix`. Process environment values take precedence. JankHunter sends detected defect measurements, at most two resized evidence frames, and the buggy demo source to Muse Spark through the Meta Model API Messages endpoint. The model returns exact-text edit blocks; JankHunter constrains file paths to the repository, requires a unique match, applies the patch on a `jankhunter/fix-*` branch, and accepts only a lower severity score with no new defect type. Rejected work is reverted. Review any accepted branch before committing it.
+The default tracker is `mock`. It reads the demo's `gt.json` sidecar, so it is useful for offline development and tests only. To use actual visual tracking, place your key in the ignored `.env` file (copy `.env.example` if needed), then run:
 
 ```powershell
-jankhunter fix demo/scenario.json --out runs/fix
+.venv\Scripts\python.exe -m jankhunter.cli detect demo/scenario.json --frames runs/capture --tracker meta-sam --out runs/sam-detect
 ```
 
-The API key is read locally and never printed or committed. Configure access and billing through [Meta Model API](https://dev.meta.ai/). The implementation uses the documented `https://api.meta.ai/v1/messages` endpoint and Muse Spark 1.3; see [Messages API](https://dev.meta.ai/docs/protocols/messages) and [Muse Spark developer guide](https://dev.meta.ai/resources/blog/build-with-muse-spark).
+The example asks SAM 3.1 to track one concept, `cyan game sprite`. SAM accepts one noun phrase per request; add more phrases to `sam_prompts` only when you want the extra requests. The uploaded video is sampled to at most 120 frames and deleted after the request. SAM requires at least 50 video frames.
 
-## Architecture
+## Try the offline fix loop
+
+This uses a deterministic fixture patch and mock tracks. It does not call Meta APIs:
+
+```powershell
+.venv\Scripts\python.exe -m jankhunter.cli fix demo/scenario.json --offline --out runs/offline-fix
+```
+
+For a model-assisted fix, copy `.env.example` to `.env`, set `MODEL_API_KEY` there, and omit `--offline`. The default is one repair attempt to limit model calls; the loop tracks the sprite with SAM 3.1, sends defect measurements, up to two resized evidence frames, and the buggy demo source to Muse Spark, then tests its proposed patch on a temporary Git branch. The branch is kept only when the measured severity falls and no new defect type appears. Review accepted edits before committing them.
+
+## What the detectors measure
+
+| Signal | Measurement |
+| --- | --- |
+| Jitter | High-frequency movement left after smoothing the centroid path |
+| Layout jump | A large position change without a gradual velocity increase |
+| Flicker | Repeated visibility changes in a short time window |
+| Vanish | An element disappears and later returns near its earlier position |
+| Stutter | Repeated frames or timestamp gaps while an element is moving |
+
+The detectors are ordinary Python functions with fixed thresholds. They do not use an LLM to decide whether a defect exists. Scores are comparison signals for this scenario, not a universal visual-quality score.
+
+## How it works
 
 ```mermaid
 flowchart LR
-    A[Scenario JSON] --> B[Playwright capture]
+    A[Scenario and actions] --> B[Playwright recording]
     B --> C[Timestamped frames]
-    C --> D[Tracker interface]
-    D --> E[Per-element tracks]
+    C --> D[SAM 3.1 or offline mock]
+    D --> E[Element tracks]
     E --> F[Deterministic detectors]
-    F --> G[Typed defects and severity]
-    G --> H[Muse Spark Diagnoser]
-    H --> I[Constrained patch on fix branch]
-    I --> J[Rebuild and recapture]
+    F --> G[Defects and evidence]
+    G --> H[Muse Spark patch proposal]
+    H --> I[Apply on temporary Git branch]
+    I --> J[Rebuild and record again]
     J --> F
-    F --> K{Lower severity and no new types?}
-    K -->|Yes| L[Keep branch for review]
-    K -->|No| M[Revert patch]
-    F --> N[Standalone HTML report]
-    J --> N
+    F --> K{Score improves and no new types?}
+    K -->|Yes| L[Keep for review]
+    K -->|No| M[Revert and retry]
+    F --> N[Self-contained HTML report]
 ```
 
-## Detection signals
+## Capture, reports, and tests
 
-- **Jitter:** high-frequency centroid residual after Savitzky–Golay smoothing.
-- **Layout jump:** unusually large displacement without a preceding velocity ramp.
-- **Flicker:** repeated visibility changes in a sliding window.
-- **Vanish:** an object disappears and returns near its previous position.
-- **Stutter:** a timestamp gap or repeated frame image while a tracked object is moving.
+Capture prefers Chromium's CDP screencast and falls back to Playwright video. It is not a hard real-time recorder: expect about 10–24 frames per second depending on machine load. Below 15 fps, short glitches are easier to miss. The fallback reconstructs timestamps from the saved video and is less precise than CDP timestamps. The report command creates a self-contained HTML file with defect tables, trajectories, frame evidence, patch diff, and iteration history.
 
-Each detector is deterministic and has synthetic positive and clean-track tests. Severity is a scenario-level heuristic for comparing before and after runs, not a universal UX score.
-
-## Capture and tracker status
-
-Capture prefers Chromium CDP `Page.startScreencast`; Playwright video is recorded as a fallback and requires `ffmpeg`/`ffprobe` to extract frames. Browser load and headless throttling affect frame cadence: this is not a hard-real-time recorder. Expect roughly 10–24 fps depending on the machine. Below 15 fps, brief jitter and duplicate-frame signals become less reliable; the fallback reconstructs timestamps from video frame rate and is less precise than CDP timestamps.
-
-The `Tracker` interface is ready. `MockTracker` reconstructs tracks from the demo sidecar and is clearly restricted to local development and tests. `MetaSAMTracker` remains an honest Phase 2 stub: the SAM video-tracking endpoint and response schema have not been confirmed, so the project does not invent an integration or claim that the final pipeline uses SAM. Consequently, real-app perception is not implemented yet.
-
-## Development
+Run the unit suite and lint checks with:
 
 ```powershell
-pytest
-ruff check .
+.venv\Scripts\python.exe -m pytest
+.venv\Scripts\ruff.exe check .
 ```
 
-The static demo is original vanilla JavaScript and runs with Python's built-in HTTP server. `demo/buggy` contains planted examples; `demo/fixed` is the clean reference and is not supplied to the diagnoser.
+The static vanilla-JavaScript demo is served with Python's built-in HTTP server. `demo/buggy` contains the planted source defects; `demo/fixed` is a reference and is not passed to the diagnoser. `MockTracker` reads test fixture ground truth. Never present mock-tracker results as black-box visual perception.
 
-## Built during the hackathon
+## Limits
 
-- Pydantic models and JSON scenario format.
-- Playwright capture with CDP screencast and video fallback.
-- Tracker abstraction, sidecar-backed mock, and SAM placeholder.
-- Five deterministic temporal detectors and synthetic tests.
-- Offline test diagnoser and Muse Spark Diagnoser through Meta Model API.
-- Constrained patch application, branch-based verification, and standalone HTML report.
-- Typer CLI for `capture`, `detect`, `fix`, and `report`.
+- SAM returns boxes on sampled frames, not calibrated measurements. Small or visually ambiguous objects may be missed, merged, or assigned a different ID. Detector confidence depends on the tracking result and capture cadence.
+- The sample scenario focuses on one sprite. Reliable tracking of several objects requires carefully chosen phrases and separate requests; the current prototype has not been validated across real games or browsers.
+- Muse Spark proposes code edits. A falling detector score on one scripted run does not prove the patch is correct or safe. Inspect the diff and repeat with additional scenarios before shipping.
+- The demo and tests establish a working research prototype, not production readiness or a guaranteed reduction in real-world incidents.
+
+## Project files
+
+- `jankhunter/` — capture, trackers, detectors, repair loop, report, and CLI.
+- `demo/` — original canvas app, planted defects, clean reference, and scenario.
+- `tests/` — synthetic detector, fix-loop, and SAM parsing/video tests.
+- `docs/DEVLOG.md` — short build notes.
 
 ## License
 

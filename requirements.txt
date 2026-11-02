@@ -1,0 +1,13 @@
+# Install in the repository's Python 3.11 virtual environment.
+typer>=0.12
+playwright>=1.44
+numpy>=1.26
+scipy>=1.13
+opencv-python>=4.9
+matplotlib>=3.9
+pydantic>=2.7
+openai>=1.99
+meta-sam-parser>=0.1.0
+pytest>=8.2
+pytest-cov>=5.0
+ruff>=0.4

@@ -28,3 +28,11 @@
 - **Honest limitation:** SAM video tracking remains unimplemented pending a verified API schema. This release's complete demo uses the sidecar mock and should be presented as a prototype, not production-ready perception.
 - **Ambiguity resolved:** `fix` compares the weighted detector severity and defect-type set across recordings of the same scenario. This is a regression gate, not proof that the patch is correct for all interactions.
 - Added local `.env` loading for `MODEL_API_KEY`; the ignored file is never logged. To limit request cost, the Muse call has a 1,200-token output cap and sends at most two resized evidence frames plus only the source file it may edit.
+
+### Meta tracker and packaging
+- Implemented the documented SAM 3.1 Responses API video path with `meta-sam-parser`; a local video writer samples 50–120 captured frames, maps returned boxes back to capture timestamps, and requests server-side deletion of the uploaded clip after processing.
+- Added `detect --tracker meta-sam`; ordinary capture/detect and no-key tests continue to use `MockTracker` unless selected explicitly. The online fix loop uses SAM; `--offline` stays local.
+- Added `.env.example` and a plain `requirements.txt` for Python 3.11 virtual environments. Rewrote README to distinguish measured behavior from unverified claims and to document capture-rate and model limits.
+- Added offline tests for SAM frame limits, MP4 creation, and parsed box-to-track conversion. No model API request was made while implementing these changes.
+- **Remaining limitation:** SAM returns sampled observations; temporal events between samples can be missed. The live account/API path still needs one deliberate end-to-end validation before submission.
+- **Correction:** SAM API schema is now implemented against Meta's published documentation. The earlier entry above accurately records the prior state, not the current repository state.

@@ -3,6 +3,7 @@
   "viewport": { "width": 1280, "height": 720 },
   "duration": 12.0,
   "prompt_labels": ["sprite", "hud_bar", "menu_panel", "line_chart"],
+  "sam_prompts": ["cyan game sprite"],
   "actions": [
     { "type": "wait", "duration": 2.0 },
     { "type": "mouse_move", "x": 640, "y": 360, "steps": 20 },

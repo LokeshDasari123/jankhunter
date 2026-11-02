@@ -15,3 +15,15 @@
 - `Defect.evidence`: chose `list[int]` (frame indices) rather than `list[Path]` to keep models serialization-friendly; frames are looked up by index into the `list[Frame]` returned by capture.
 - `EditBlock` safety: patch apply rejects any `file` path that doesn't resolve inside the repo root (prevent path traversal).
 - Rebuild command: configurable string; for the demo static app it is effectively empty (`""`).
+
+## 2026-11-02
+
+### Detection, repair, and reporting
+- Completed five pure detection passes and synthetic clean/defect coverage. Duplicate-frame checks compare resized grayscale image content and preserve the affected track identity.
+- Added a patch-and-verify loop with exact unique search/replace edits, repo-local path checks, per-try scores, and revert on rejection. The CLI requires a clean worktree before creating a fix branch so rejected edits cannot erase unrelated user changes.
+- The loop accepts an optional rebuild command; this vanilla-JS demo has no build step, so the default is intentionally empty.
+- Added a deterministic offline diagnoser to exercise the loop without credentials and a Muse Spark Diagnoser using Meta's current Messages API contract (`muse-spark-1.3`, `MODEL_API_KEY`). API schema was verified against official docs rather than guessed.
+- Added a self-contained HTML report with an embedded trajectory plot, evidence frames, defects, patch diff, and iteration history.
+- Demo app now retains per-frame sidecar samples; Playwright context records video for the documented ffmpeg fallback.
+- **Honest limitation:** SAM video tracking remains unimplemented pending a verified API schema. This release's complete demo uses the sidecar mock and should be presented as a prototype, not production-ready perception.
+- **Ambiguity resolved:** `fix` compares the weighted detector severity and defect-type set across recordings of the same scenario. This is a regression gate, not proof that the patch is correct for all interactions.

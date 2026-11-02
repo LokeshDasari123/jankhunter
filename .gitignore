@@ -50,6 +50,6 @@ demo/*/report.html
 # OS
 Thumbs.db
 
-# Secrets
+# Secrets (local only; never commit credentials)
 .env
 *.env

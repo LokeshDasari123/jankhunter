@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import json
 import subprocess
+from base64 import b64decode
 from io import BytesIO
 from pathlib import Path
+
+from PIL import Image
 
 from jankhunter.fix.loop import EditBlock, FakeDiagnoser, MuseSparkDiagnoser, run_fix_loop
 from jankhunter.models import Defect, Frame
@@ -80,9 +83,15 @@ def test_edit_cannot_escape_repo(tmp_path: Path, monkeypatch):
 def test_muse_request_includes_defect_evidence_images(tmp_path: Path, monkeypatch):
     from jankhunter.fix import loop
 
-    frame_path = tmp_path / "evidence.jpg"
-    frame_path.write_bytes(b"tiny-test-image")
-    defect = _defect().model_copy(update={"evidence": [0]})
+    source_dir = tmp_path / "demo" / "buggy"
+    source_dir.mkdir(parents=True)
+    (source_dir / "app.js").write_text("const sprite = {};\n", encoding="utf-8")
+    frames = []
+    for index in range(5):
+        frame_path = tmp_path / f"evidence-{index}.png"
+        Image.new("RGB", (1536, 1024), (index * 20, 40, 90)).save(frame_path)
+        frames.append(Frame(t=float(index), path=frame_path))
+    defect = _defect().model_copy(update={"evidence": [0, 1, 2, 3, 4]})
     response_body = json.dumps({
         "content": [{"type": "text", "text": json.dumps({"summary": "Observed", "edits": []})}],
     }).encode()
@@ -94,9 +103,13 @@ def test_muse_request_includes_defect_evidence_images(tmp_path: Path, monkeypatc
 
     monkeypatch.setattr(loop.urllib.request, "urlopen", fake_urlopen)
     result = MuseSparkDiagnoser(api_key="unit-test").diagnose(
-        [defect], tmp_path, 1, [Frame(t=0.0, path=frame_path)],
+        [defect], tmp_path, 1, frames,
     )
     blocks = observed["request"]["messages"][0]["content"]
+    images = [block for block in blocks if block["type"] == "image"]
     assert result.summary == "Observed"
-    assert blocks[1]["type"] == "image"
-    assert blocks[1]["source"]["media_type"] == "image/jpeg"
+    assert len(images) == 2
+    assert all(block["source"]["media_type"] == "image/jpeg" for block in images)
+    for block in images:
+        image = Image.open(BytesIO(b64decode(block["source"]["data"])))
+        assert max(image.size) <= 768

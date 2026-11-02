@@ -25,8 +25,7 @@ References:
 
 from __future__ import annotations
 
-import os
-
+from jankhunter.config import model_api_key
 from jankhunter.models import Frame, Track
 from jankhunter.tracking.base import Tracker
 
@@ -40,7 +39,7 @@ class MetaSAMTracker(Tracker):
     """
 
     def __init__(self) -> None:
-        self._api_key: str | None = os.environ.get("MODEL_API_KEY")
+        self._api_key: str | None = model_api_key()
 
     def track(self, frames: list[Frame], prompts: list[str]) -> list[Track]:
         """

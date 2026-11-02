@@ -4,15 +4,18 @@ from __future__ import annotations
 
 import base64
 import json
-import os
 import subprocess
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from io import BytesIO
 from pathlib import Path
 from typing import Protocol
 from uuid import uuid4
 
+from PIL import Image
+
+from jankhunter.config import model_api_key
 from jankhunter.models import Defect, Frame
 
 
@@ -41,18 +44,20 @@ class MuseSparkDiagnoser:
 
     def __init__(self, model: str = "muse-spark-1.3", api_key: str | None = None) -> None:
         self.model = model
-        self.api_key = api_key or os.environ.get("MODEL_API_KEY")
+        self.api_key = api_key or model_api_key()
 
     def diagnose(
         self, defects: list[Defect], repo_root: Path, iteration: int,
         evidence_frames: list[Frame] | None = None,
     ) -> Diagnosis:
         if not self.api_key:
-            raise RuntimeError("Set MODEL_API_KEY to use Muse Spark through Meta Model API.")
-        source_files = sorted((repo_root / "demo" / "buggy").glob("*.js"))
+            raise RuntimeError(
+                "Set MODEL_API_KEY in the environment or the repository's ignored .env file."
+            )
+        app_source = repo_root / "demo" / "buggy" / "app.js"
         context = {
             "defects": [defect.model_dump(mode="json") for defect in defects],
-            "source": {str(path.relative_to(repo_root)): path.read_text(encoding="utf-8") for path in source_files},
+            "source": {str(app_source.relative_to(repo_root)): app_source.read_text(encoding="utf-8")},
             "iteration": iteration,
         }
         schema = {
@@ -67,17 +72,21 @@ class MuseSparkDiagnoser:
                 }},
             }, "required": ["summary", "edits"], "additionalProperties": False,
         }
-        selected_indices = sorted({index for defect in defects for index in defect.evidence})[:5]
+        candidates = sorted({index for defect in defects for index in defect.evidence})
+        selected_indices = candidates if len(candidates) <= 2 else [candidates[0], candidates[-1]]
         frames_by_index = evidence_frames or []
         content: list[dict[str, object]] = [{"type": "text", "text": json.dumps(context)}]
         for index in selected_indices:
             if 0 <= index < len(frames_by_index):
                 frame = frames_by_index[index]
                 if frame.path.is_file():
-                    media_type = "image/png" if frame.path.suffix.lower() == ".png" else "image/jpeg"
-                    encoded = base64.b64encode(frame.path.read_bytes()).decode("ascii")
+                    with Image.open(frame.path) as image:
+                        image.thumbnail((768, 768), Image.Resampling.LANCZOS)
+                        buffer = BytesIO()
+                        image.convert("RGB").save(buffer, format="JPEG", quality=65, optimize=True)
+                    encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
                     content.append({"type": "image", "source": {
-                        "type": "base64", "media_type": media_type, "data": encoded,
+                        "type": "base64", "media_type": "image/jpeg", "data": encoded,
                     }})
         body = json.dumps({
             "model": self.model,
@@ -85,7 +94,7 @@ class MuseSparkDiagnoser:
             "system": (
                 "Diagnose temporal visual bugs from deterministic detector evidence and source. "
                 "Return the smallest safe exact-text edits as JSON matching the requested schema. "
-                "Only edit demo/buggy/app.js or demo/buggy/index.html. Do not invent evidence."
+                "Only edit demo/buggy/app.js. Do not invent evidence."
             ),
             "messages": [{"role": "user", "content": content}],
             "output_config": {"format": {"type": "json_schema", "schema": schema}},
@@ -99,8 +108,7 @@ class MuseSparkDiagnoser:
             with urllib.request.urlopen(request, timeout=90) as response:
                 payload = json.loads(response.read())
         except urllib.error.HTTPError as exc:
-            detail = exc.read().decode(errors="replace")[:500]
-            raise RuntimeError(f"Meta Model API returned HTTP {exc.code}: {detail}") from exc
+            raise RuntimeError(f"Meta Model API request failed (HTTP {exc.code}).") from exc
         answer = "".join(block.get("text", "") for block in payload.get("content", []) if block.get("type") == "text")
         try:
             data = json.loads(answer)

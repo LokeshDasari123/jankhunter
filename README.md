@@ -33,14 +33,13 @@ The scenario URL defaults to `http://localhost:8080`. Serve `demo/buggy` on that
 
 ## Muse Spark repair
 
-Set `MODEL_API_KEY` in the environment, then run `jankhunter fix`. JankHunter sends detected defect measurements, up to five evidence frames, and the buggy demo source to Muse Spark through the Meta Model API Messages endpoint. The model returns exact-text edit blocks; JankHunter constrains file paths to the repository, requires a unique match, applies the patch on a `jankhunter/fix-*` branch, and accepts only a lower severity score with no new defect type. Rejected work is reverted. Review any accepted branch before committing it.
+Put `MODEL_API_KEY=...` in the local `.env` file (already ignored by Git), or set it in the process environment, then run `jankhunter fix`. Process environment values take precedence. JankHunter sends detected defect measurements, at most two resized evidence frames, and the buggy demo source to Muse Spark through the Meta Model API Messages endpoint. The model returns exact-text edit blocks; JankHunter constrains file paths to the repository, requires a unique match, applies the patch on a `jankhunter/fix-*` branch, and accepts only a lower severity score with no new defect type. Rejected work is reverted. Review any accepted branch before committing it.
 
 ```powershell
-$env:MODEL_API_KEY = "<your Meta Model API key>"
 jankhunter fix demo/scenario.json --out runs/fix
 ```
 
-The API key is read from the environment and must never be committed. Configure access and billing through [Meta Model API](https://dev.meta.ai/). The implementation uses the documented `https://api.meta.ai/v1/messages` endpoint and Muse Spark 1.3; see [Messages API](https://dev.meta.ai/docs/protocols/messages) and [Muse Spark developer guide](https://dev.meta.ai/resources/blog/build-with-muse-spark).
+The API key is read locally and never printed or committed. Configure access and billing through [Meta Model API](https://dev.meta.ai/). The implementation uses the documented `https://api.meta.ai/v1/messages` endpoint and Muse Spark 1.3; see [Messages API](https://dev.meta.ai/docs/protocols/messages) and [Muse Spark developer guide](https://dev.meta.ai/resources/blog/build-with-muse-spark).
 
 ## Architecture
 

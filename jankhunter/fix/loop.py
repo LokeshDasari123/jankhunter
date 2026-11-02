@@ -126,6 +126,11 @@ class MuseSparkDiagnoser:
             with urllib.request.urlopen(request, timeout=90) as response:
                 payload = json.loads(response.read())
         except urllib.error.HTTPError as exc:
+            if exc.code == 402:
+                raise RuntimeError(
+                    "Meta rejected the Muse Spark request because billing is restricted "
+                    "(HTTP 402). Check Meta Billing before retrying."
+                ) from exc
             raise RuntimeError(f"Meta Model API request failed (HTTP {exc.code}).") from exc
         answer = "".join(
             block.get("text", "")

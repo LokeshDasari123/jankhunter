@@ -43,9 +43,11 @@ def test_sam_video_writer_creates_readable_mp4(tmp_path: Path) -> None:
 
     reader = cv2.VideoCapture(str(output))
     ok, frame = reader.read()
+    fps = reader.get(cv2.CAP_PROP_FPS)
     reader.release()
     assert (width, height) == (32, 24)
     assert ok and frame.shape[:2] == (24, 32)
+    assert fps == pytest.approx(12.0, abs=0.1)
 
 
 def test_parser_boxes_become_tracks_on_original_timestamps(tmp_path: Path) -> None:

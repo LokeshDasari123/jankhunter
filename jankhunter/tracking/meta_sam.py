@@ -17,7 +17,7 @@ from meta_sam_parser import (
     build_object_prompt,
     video_segmentation_format,
 )
-from openai import OpenAI
+from openai import APIStatusError, OpenAI
 
 from jankhunter.config import model_api_key
 from jankhunter.models import Frame, SAMSeed, Track, TrackPoint
@@ -26,7 +26,7 @@ from jankhunter.tracking.base import Tracker
 SAM_BASE_URL = "https://api.meta.ai/v1"
 SAM_MODEL = "sam-3.1"
 MIN_VIDEO_FRAMES = 50
-MAX_VIDEO_FRAMES = 120
+MAX_VIDEO_FRAMES = 180
 
 
 def _sample_frames(frames: list[Frame], limit: int = MAX_VIDEO_FRAMES) -> list[Frame]:
@@ -43,7 +43,9 @@ def _write_video(frames: list[Frame], path: Path) -> tuple[int, int]:
     if first is None:
         raise ValueError(f"Could not read captured frame: {frames[0].path}")
     height, width = first.shape[:2]
-    writer = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*"mp4v"), 10.0, (width, height))
+    elapsed = frames[-1].t - frames[0].t
+    fps = (len(frames) - 1) / elapsed if elapsed > 0 else 10.0
+    writer = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*"mp4v"), fps, (width, height))
     if not writer.isOpened():
         raise RuntimeError("OpenCV could not create the temporary MPEG-4 video for SAM.")
     try:
@@ -210,6 +212,13 @@ class MetaSAMTracker(Tracker):
                 raise RuntimeError("SAM response ended before response.completed.")
             result = parsed_stream.finish(CompletedOutcome()).result
             return _tracks_from_result(result.records, labels, sampled, width, height)
+        except APIStatusError as exc:
+            if exc.status_code == 402:
+                raise RuntimeError(
+                    "Meta rejected the SAM request because billing is restricted (HTTP 402). "
+                    "Check Meta Billing before retrying."
+                ) from exc
+            raise RuntimeError(f"Meta SAM request failed (HTTP {exc.status_code}).") from exc
         finally:
             if uploaded is not None:
                 with suppress(Exception):

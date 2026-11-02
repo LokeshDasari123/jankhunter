@@ -30,7 +30,7 @@ The default tracker is `mock`. It reads the demo's `gt.json` sidecar, so it is u
 .venv\Scripts\python.exe -m jankhunter.cli detect demo/scenario.json --frames runs/capture --tracker meta-sam --out runs/sam-detect
 ```
 
-The scenario seeds the sprite and HUD with manual bounding boxes. SAM 3.1 tracks both IDs in one request; the boxes are scenario inputs, not read from the app's ground-truth sidecar. You can also use `sam_prompts` for short noun phrases, with one request per phrase. The uploaded video is sampled to at most 120 frames and deleted after the request. SAM requires at least 50 video frames. See Meta's [SAM segmenting guide](https://dev.meta.ai/docs/sam/segmenting) and [Python parser guide](https://dev.meta.ai/docs/sam/client-libraries) for the request and response formats.
+The scenario seeds the sprite and HUD with manual bounding boxes. SAM 3.1 tracks both IDs in one request; the boxes are scenario inputs, not read from the app's ground-truth sidecar. You can also use `sam_prompts` for short noun phrases, with one request per phrase. The uploaded video is sampled to at most 180 frames, keeps the capture's elapsed time, and is deleted after the request. SAM requires at least 50 video frames. See Meta's [SAM segmenting guide](https://dev.meta.ai/docs/sam/segmenting) and [Python parser guide](https://dev.meta.ai/docs/sam/client-libraries) for the request and response formats.
 
 ## Try the offline fix loop
 

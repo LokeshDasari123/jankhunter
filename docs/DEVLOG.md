@@ -30,7 +30,7 @@
 - Added local `.env` loading for `MODEL_API_KEY`; the ignored file is never logged. Muse receives at most two resized evidence frames and only the source file it may edit.
 
 ### Meta tracker and packaging
-- Implemented the documented SAM 3.1 Responses API video path with `meta-sam-parser`; a local video writer samples 50–120 captured frames, maps returned boxes back to capture timestamps, and requests server-side deletion of the uploaded clip after processing.
+- Implemented the documented SAM 3.1 Responses API video path with `meta-sam-parser`; a local video writer samples 50–180 captured frames, preserves elapsed time, maps returned boxes back to capture timestamps, and requests server-side deletion of the uploaded clip after processing.
 - Added `detect --tracker meta-sam`; ordinary capture/detect and no-key tests continue to use `MockTracker` unless selected explicitly. The online fix loop uses SAM; `--offline` stays local. Seed boxes let one SAM request track several named objects in the same clip.
 - Added `.env.example` and a plain `requirements.txt` for Python 3.11 virtual environments. Rewrote README to distinguish measured behavior from unverified claims and to document capture-rate and model limits.
 - Added offline tests for SAM frame limits, MP4 creation, parsed box-to-track conversion, and multi-object prompt construction.

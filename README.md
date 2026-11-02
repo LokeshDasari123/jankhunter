@@ -30,7 +30,7 @@ The default tracker is `mock`. It reads the demo's `gt.json` sidecar, so it is u
 .venv\Scripts\python.exe -m jankhunter.cli detect demo/scenario.json --frames runs/capture --tracker meta-sam --out runs/sam-detect
 ```
 
-The example asks SAM 3.1 to track one concept, `cyan game sprite`. SAM accepts one noun phrase per request; add more phrases to `sam_prompts` only when you want the extra requests. The uploaded video is sampled to at most 120 frames and deleted after the request. SAM requires at least 50 video frames.
+The example asks SAM 3.1 to track one concept, `cyan game sprite`. SAM accepts one noun phrase per request; add more phrases to `sam_prompts` only when you want the extra requests. The uploaded video is sampled to at most 120 frames and deleted after the request. SAM requires at least 50 video frames. See Meta's [SAM segmenting guide](https://dev.meta.ai/docs/sam/segmenting) and [Python parser guide](https://dev.meta.ai/docs/sam/client-libraries) for the request and response formats.
 
 ## Try the offline fix loop
 
@@ -40,7 +40,13 @@ This uses a deterministic fixture patch and mock tracks. It does not call Meta A
 .venv\Scripts\python.exe -m jankhunter.cli fix demo/scenario.json --offline --out runs/offline-fix
 ```
 
-For a model-assisted fix, copy `.env.example` to `.env`, set `MODEL_API_KEY` there, and omit `--offline`. The default is one repair attempt to limit model calls; the loop tracks the sprite with SAM 3.1, sends defect measurements, up to two resized evidence frames, and the buggy demo source to Muse Spark, then tests its proposed patch on a temporary Git branch. The branch is kept only when the measured severity falls and no new defect type appears. Review accepted edits before committing them.
+`fix` writes an HTML report itself. To rebuild one from saved before/after runs:
+
+```powershell
+.venv\Scripts\python.exe -m jankhunter.cli report --before runs/offline-fix/before --after runs/offline-fix/after-try-1 --history runs/offline-fix/iterations.json --out runs/offline-fix/report.html
+```
+
+For a model-assisted fix, copy `.env.example` to `.env`, set `MODEL_API_KEY` there, and omit `--offline`. The default is one repair attempt to limit model calls; the loop tracks the sprite with SAM 3.1, sends defect measurements, up to two resized evidence frames, and the buggy demo source to Muse Spark, then tests its proposed patch on a temporary Git branch. The branch is kept only when the measured severity falls and no new defect type appears. Review accepted edits before committing them. The request uses Meta's [Messages API](https://dev.meta.ai/docs/protocols/messages).
 
 ## What the detectors measure
 

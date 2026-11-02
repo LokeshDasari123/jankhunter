@@ -113,17 +113,28 @@ class FakeDiagnoser:
     """Deterministic offline diagnoser used by tests and the local demo."""
 
     def __init__(self, edits: tuple[EditBlock, ...] | None = None) -> None:
-        self.edits = edits or (EditBlock(
-            "demo/buggy/app.js",
-            "sprite.x = Math.floor(sprite.x + 3);   // WRONG: ignores dt and vx\n  sprite.y = Math.floor(sprite.y + 2);   // WRONG: ignores dt and vy",
-            "sprite.x += sprite.vx * dt;\n  sprite.y += sprite.vy * dt;",
-        ),)
+        self.edits = edits or (
+            EditBlock(
+                "demo/buggy/app.js",
+                "sprite.x = Math.floor(sprite.x + 3);   // WRONG: ignores dt and vx\n  sprite.y = Math.floor(sprite.y + 2);   // WRONG: ignores dt and vy",
+                "sprite.x += sprite.vx * dt;\n  sprite.y += sprite.vy * dt;",
+            ),
+            EditBlock(
+                "demo/buggy/app.js",
+                "  // BUG 1 — synchronous work stalls the main thread every 45 frames.\n"
+                "  if (frameCount % 45 === 0) {\n"
+                "    const started = performance.now();\n"
+                "    while (performance.now() - started < 45) { /* simulate an expensive update */ }\n"
+                "  }\n\n",
+                "",
+            ),
+        )
 
     def diagnose(
         self, defects: list[Defect], repo_root: Path, iteration: int,
         evidence_frames: list[Frame] | None = None,
     ) -> Diagnosis:
-        return Diagnosis("Offline fixture patch for the demo's fixed-step motion bug.", self.edits)
+        return Diagnosis("Offline fixture patch for the demo's uneven motion and main-thread stalls.", self.edits)
 
 
 @dataclass

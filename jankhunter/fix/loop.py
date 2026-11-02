@@ -90,7 +90,7 @@ class MuseSparkDiagnoser:
                     }})
         body = json.dumps({
             "model": self.model,
-            "max_tokens": 1800,
+            "max_tokens": 1200,
             "system": (
                 "Diagnose temporal visual bugs from deterministic detector evidence and source. "
                 "Return the smallest safe exact-text edits as JSON matching the requested schema. "

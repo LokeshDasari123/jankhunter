@@ -27,4 +27,4 @@
 - Demo app now retains per-frame sidecar samples; Playwright context records video for the documented ffmpeg fallback.
 - **Honest limitation:** SAM video tracking remains unimplemented pending a verified API schema. This release's complete demo uses the sidecar mock and should be presented as a prototype, not production-ready perception.
 - **Ambiguity resolved:** `fix` compares the weighted detector severity and defect-type set across recordings of the same scenario. This is a regression gate, not proof that the patch is correct for all interactions.
-- Added local `.env` loading for `MODEL_API_KEY`; the ignored file is never logged. To limit image-token use, the Muse request now sends at most two resized evidence frames and only the source file that edits are allowed to change.
+- Added local `.env` loading for `MODEL_API_KEY`; the ignored file is never logged. To limit request cost, the Muse call has a 1,200-token output cap and sends at most two resized evidence frames plus only the source file it may edit.

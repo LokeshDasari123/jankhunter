@@ -10,7 +10,7 @@ import typer
 
 from jankhunter.capture import capture, load_frames
 from jankhunter.detect.run import detect_all
-from jankhunter.fix.loop import FakeDiagnoser, MuseSparkDiagnoser, run_fix_loop
+from jankhunter.fix.loop import FakeDiagnoser, Iteration, MuseSparkDiagnoser, run_fix_loop
 from jankhunter.models import Defect, Frame, Scenario, Track
 from jankhunter.report import write_report
 from jankhunter.tracking.mock import MockTracker
@@ -107,6 +107,7 @@ def report(
     before: Path = typer.Option(..., "--before", exists=True, file_okay=False),
     after: Path = typer.Option(..., "--after", exists=True, file_okay=False),
     out: Path = typer.Option(Path("runs/report.html"), "--out"),
+    history_file: Path | None = typer.Option(None, "--history", exists=True, readable=True),
 ) -> None:
     """Build a standalone HTML report from saved before and after runs."""
     before_frames, after_frames = load_frames(before), load_frames(after)
@@ -114,9 +115,13 @@ def report(
     after_defects = json.loads((after / "defects.json").read_text(encoding="utf-8"))["defects"]
     before_tracks = json.loads((before / "tracks.json").read_text(encoding="utf-8"))
     after_tracks = json.loads((after / "tracks.json").read_text(encoding="utf-8"))
+    history = (
+        [Iteration(**item) for item in json.loads(history_file.read_text(encoding="utf-8"))]
+        if history_file else None
+    )
     write_report(out, [Defect.model_validate(d) for d in before_defects],
                  [Defect.model_validate(d) for d in after_defects], before_frames, after_frames,
-                 [Track.model_validate(t) for t in before_tracks], [Track.model_validate(t) for t in after_tracks])
+                 [Track.model_validate(t) for t in before_tracks], [Track.model_validate(t) for t in after_tracks], history)
     typer.echo(f"Report written to {out}")
 
 

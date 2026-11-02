@@ -49,12 +49,13 @@ let sprite = {
   vx: 160, vy: 120,
   r: 24,
   color: "#4af",
+  visible: true,
 };
 
 const hud = {
   hp: 100, maxHp: 100,
   x: 16, y: 16,
-  w: 200, h: 20,
+  w: 40, h: 20,
   label: "HP",
 };
 
@@ -75,11 +76,17 @@ const chart = {
 };
 
 window.__jh_gt = { tracks: {}, frame: 0 };
+window.__jh_gt_history = [];
 
-// BUG 2 — fontReady is never set to true before drawing starts; the guard is
-// removed so measureText runs with the fallback font every frame until after
-// the first paint, causing a 1-frame layout jump once the real font settles.
-let fontReady = true; // always "ready" — bypasses the document.fonts.ready guard
+// BUG 2 — delayed font/content readiness changes the content-sized HUD after
+// it is already visible, producing a measurable width jump.
+let fontReady = false;
+window.setTimeout(() => {
+  fontReady = true;
+  hud.label = "HEALTH";
+  ctx.font = "14px 'Courier New'";
+  hud.w = Math.ceil(ctx.measureText(hud.label).width + 24);
+}, 900);
 
 let frameCount = 0;
 const STATE_RESET_EVERY = 120; // BUG 3 trigger interval
@@ -111,9 +118,13 @@ function update(dt) {
 
   frameCount++;
 
-  // BUG 3 — recreate sprite object every STATE_RESET_EVERY frames
-  // instead of just repositioning it. This causes the tracker to see
-  // an apparent object disappearance + reappearance = flicker.
+  // BUG 1 — synchronous work stalls the main thread every 45 frames.
+  if (frameCount % 45 === 0) {
+    const started = performance.now();
+    while (performance.now() - started < 45) { /* simulate an expensive update */ }
+  }
+
+  // BUG 3 — replacing the sprite drops it for the reset frame.
   if (frameCount % STATE_RESET_EVERY === 0) {
     const oldX = sprite.x, oldY = sprite.y;
     sprite = {                // ← new object: tracker loses continuity
@@ -121,7 +132,10 @@ function update(dt) {
       vx: 160, vy: 120,
       r: 24,
       color: "#4af",
+      visible: false,
     };
+  } else {
+    sprite.visible = true;
   }
 }
 
@@ -140,17 +154,17 @@ function draw(now) {
   }
 
   // Sprite
-  ctx.beginPath();
-  ctx.arc(sprite.x, sprite.y, sprite.r, 0, Math.PI * 2);
-  ctx.fillStyle = sprite.color;
-  ctx.fill();
-  ctx.strokeStyle = "#fff";
-  ctx.lineWidth = 2;
-  ctx.stroke();
+  if (sprite.visible) {
+    ctx.beginPath();
+    ctx.arc(sprite.x, sprite.y, sprite.r, 0, Math.PI * 2);
+    ctx.fillStyle = sprite.color;
+    ctx.fill();
+    ctx.strokeStyle = "#fff";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
 
-  // BUG 2 — fontReady is always true so we always try to measure text,
-  // but the font may not have loaded yet on the very first frames, causing
-  // a visible layout jump when the measured width changes.
+  // BUG 2 — the late label/font update resizes the HUD while visible.
   ctx.fillStyle = "rgba(0,0,0,0.6)";
   ctx.fillRect(hud.x - 4, hud.y - 4, hud.w + 8, hud.h + 24);
 
@@ -227,10 +241,7 @@ function exportGT(now) {
   const myMenu = Math.round(H() / 2 - menu.h / 2);
   const menuVisible = menu.x > -menu.w + 4;
 
-  // BUG 3 — ground truth reflects the recreation: tracker sees a momentary
-  // invisible frame at the reset boundary (simulate by toggling visible=false
-  // on the frame where the object is replaced)
-  const spriteVisible = (frameCount % STATE_RESET_EVERY !== 0);
+  const spriteVisible = sprite.visible;
 
   window.__jh_gt = {
     frame: frameCount,
@@ -242,6 +253,7 @@ function exportGT(now) {
       line_chart: mkPoint(chart.x(), chart.y(), chart.w, chart.h),
     },
   };
+  window.__jh_gt_history.push(window.__jh_gt);
 }
 
 // ─── Menu toggle ──────────────────────────────────────────────────────────────

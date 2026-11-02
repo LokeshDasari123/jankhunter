@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import json
 import logging
 import subprocess
@@ -72,12 +73,17 @@ async def _capture_async(scenario: Scenario, out_dir: Path) -> list[Frame]:
         browser = await pw.chromium.launch(headless=True)
         context = await browser.new_context(
             viewport={"width": scenario.viewport["width"], "height": scenario.viewport["height"]},
+            record_video_dir=str(out_dir),
         )
         page = await context.new_page()
 
         frames: list[Frame] = []
         frame_index = [0]
         t0: list[float] = []
+
+        # Start the timeline after the document initializes so frame timestamps
+        # align with the demo's page-relative ground-truth history.
+        await page.goto(scenario.url, wait_until="networkidle", timeout=30_000)
 
         # ── Try CDP screencast ──────────────────────────────────────────────
         cdp_ok = False
@@ -102,6 +108,7 @@ async def _capture_async(scenario: Scenario, out_dir: Path) -> list[Frame]:
                 fpath.write_bytes(img_data)
                 frames.append(Frame(t=t, path=fpath))
                 log.debug("screencast frame %d  t=%.3f", idx, t)
+                await client.send("Page.screencastFrameAck", {"sessionId": event["sessionId"]})
 
             client.on("Page.screencastFrame", _on_screencast_frame)
             await client.send(
@@ -113,9 +120,7 @@ async def _capture_async(scenario: Scenario, out_dir: Path) -> list[Frame]:
         except Exception as exc:
             log.warning("CDP screencast unavailable (%s); will use record_video fallback", exc)
 
-        # ── Navigate & execute actions ─────────────────────────────────────
-        await page.goto(scenario.url, wait_until="networkidle", timeout=30_000)
-
+        # ── Execute scripted actions ────────────────────────────────────────
         for action in scenario.actions:
             match action.type:
                 case "wait":
@@ -146,10 +151,8 @@ async def _capture_async(scenario: Scenario, out_dir: Path) -> list[Frame]:
 
         # ── Stop CDP screencast ────────────────────────────────────────────
         if cdp_ok:
-            try:
+            with contextlib.suppress(Exception):
                 await client.send("Page.stopScreencast")
-            except Exception:
-                pass
 
         await browser.close()
 
@@ -199,7 +202,7 @@ def _ffmpeg_fallback(out_dir: Path) -> list[Frame]:
         [
             "ffmpeg", "-y",
             "-i", str(video_path),
-            "-vf", "fps=fps",
+            "-vf", f"fps={fps:g}",
             str(out_dir / "frame_%05d.jpg"),
         ],
         capture_output=True,

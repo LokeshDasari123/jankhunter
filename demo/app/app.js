@@ -65,6 +65,7 @@ const chart = {
 
 // Ground-truth sidecar exposed to Playwright
 window.__jh_gt = { tracks: {}, frame: 0 };
+window.__jh_gt_history = [];
 
 // Font loading guard — measure HUD only after fonts are ready
 let fontReady = false;
@@ -218,6 +219,7 @@ function exportGT(now) {
       line_chart: mkPoint(chart.x(), chart.y(), chart.w, chart.h),
     },
   };
+  window.__jh_gt_history.push(window.__jh_gt);
 }
 
 // ─── Main loop ────────────────────────────────────────────────────────────────

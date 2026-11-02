@@ -57,9 +57,11 @@ class DetectorConfig:
     vanish_max_gap_s: float = 0.75
 
     # ── Stutter ───────────────────────────────────────────────────────────────
-    # A timestamp gap > stutter_gap_s while centroid is moving
-    # (velocity > stutter_motion_px_s px/s) is a stutter event.
+    # A timestamp gap while the centroid is moving (velocity > threshold)
+    # is a stutter event. The threshold is capped by stutter_gap_s and adapts
+    # to the recording cadence using the median interval times this multiplier.
     stutter_gap_s: float = 0.1
+    stutter_gap_multiplier: float = 3.0
     stutter_motion_px_s: float = 5.0
     stutter_min_points: int = 4
 

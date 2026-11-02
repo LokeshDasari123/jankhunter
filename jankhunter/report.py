@@ -6,8 +6,10 @@ import base64
 import html
 import io
 from pathlib import Path
+from statistics import median
 
 import matplotlib
+from PIL import Image, ImageDraw
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -42,14 +44,52 @@ def _trajectory_plot(before: list[Track], after: list[Track]) -> str:
     return f"data:image/png;base64,{base64.b64encode(buf.getvalue()).decode()}"
 
 
-def _frame_strip(frames: list[Frame], defects: list[Defect], title: str) -> str:
+def _frame_image_data(frame: Frame, tracks: list[Track]) -> str:
+    visible_tracks = []
+    for track in tracks:
+        visible_points = [point for point in track.points if point.visible]
+        if not visible_points:
+            continue
+        cadence = median(
+            [b.t - a.t for a, b in zip(visible_points, visible_points[1:], strict=False)]
+        ) if len(visible_points) > 1 else 0.0
+        tolerance = max(0.075, min(0.2, cadence * 1.5))
+        point = min(visible_points, key=lambda item: abs(item.t - frame.t))
+        if abs(point.t - frame.t) <= tolerance:
+            visible_tracks.append((track.label, point))
+
+    if not visible_tracks:
+        return _image_data(frame.path)
+
+    with Image.open(frame.path) as source:
+        image = source.convert("RGB")
+    draw = ImageDraw.Draw(image)
+    palette = ["#25e0a4", "#ffbf47", "#6bb6ff", "#ff7186", "#c49bff"]
+    for index, (label, point) in enumerate(visible_tracks):
+        x, y, width, height = point.bbox
+        if width <= 0 or height <= 0:
+            continue
+        color = palette[index % len(palette)]
+        draw.rectangle((x, y, x + width - 1, y + height - 1), outline=color, width=3)
+        text_box = draw.textbbox((x, y), label)
+        text_y = max(0, y - (text_box[3] - text_box[1]) - 5)
+        draw.rectangle((x, text_y, x + text_box[2] - text_box[0] + 6, y - 1), fill=color)
+        draw.text((x + 3, text_y), label, fill="#10151c")
+    buffer = io.BytesIO()
+    image.save(buffer, format="JPEG", quality=82, optimize=True)
+    return f"data:image/jpeg;base64,{base64.b64encode(buffer.getvalue()).decode()}"
+
+
+def _frame_strip(
+    frames: list[Frame], defects: list[Defect], title: str, tracks: list[Track]
+) -> str:
     indices = sorted({index for defect in defects for index in defect.evidence if 0 <= index < len(frames)})
     if not indices:
         indices = list(range(min(4, len(frames))))
     imgs = []
     for index in indices[:6]:
         frame = frames[index]
-        imgs.append(f'<figure><img src="{_image_data(frame.path)}" alt="{title} frame {index}">'
+        imgs.append(f'<figure><img src="{_frame_image_data(frame, tracks)}" alt="{title} frame {index} with track boxes">'
                     f'<figcaption>{title} · {frame.t:.2f}s · frame {index}</figcaption></figure>')
     return "".join(imgs)
 
@@ -89,8 +129,8 @@ table{{width:100%;border-collapse:collapse}}th,td{{text-align:left;vertical-alig
 <section><h2>Findings before repair</h2><p>{len(defects_before)} defects · {len(defects_after)} after · {len(defects_before)-len(defects_after):+d} net change</p>
 <table><thead><tr><th>Type</th><th>Element</th><th>Window</th><th>Severity</th><th>Metric</th><th>Evidence frames</th></tr></thead><tbody>{rows}</tbody></table></section>
 <section><h2>Trajectory comparison</h2><img src="{plot}" alt="Before and after trajectory plot"></section>
-<section><h2>Evidence frames</h2><h3>Before</h3><div class="strip">{_frame_strip(frames_before, defects_before, 'Before')}</div>
-<h3>After</h3><div class="strip">{_frame_strip(frames_after, defects_after, 'After')}</div></section>
+<section><h2>Evidence frames</h2><h3>Before</h3><div class="strip">{_frame_strip(frames_before, defects_before, 'Before', tracks_before)}</div>
+<h3>After</h3><div class="strip">{_frame_strip(frames_after, defects_after, 'After', tracks_after)}</div></section>
 <section><h2>Repair history</h2><table><thead><tr><th>Try</th><th>Diagnosis</th><th>Before score</th><th>After score</th><th>Result</th><th>Patch diff / error</th></tr></thead><tbody>{history_rows}</tbody></table></section>
 <p class="muted">Scores are heuristic indicators for this scenario, not universal quality scores. Captured frames and tracking quality bound detector accuracy.</p></body></html>"""
     out_path.parent.mkdir(parents=True, exist_ok=True)

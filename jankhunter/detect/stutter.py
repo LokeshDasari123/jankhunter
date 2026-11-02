@@ -10,6 +10,7 @@ Two independent signals:
 Signal A — Timestamp gap:
   Consecutive frames whose timestamp difference exceeds `stutter_gap_s` while
   the element's centroid velocity exceeds `stutter_motion_px_s` px/s are flagged.
+  The gap threshold adapts to capture cadence, capped by `stutter_gap_s`.
   (A large gap while moving means dropped frames during motion.)
 
 Signal B — Duplicate frames (pixel hash):
@@ -41,6 +42,7 @@ def detect_stutter(
     track: Track,
     frames: list[Frame],
     config: DetectorConfig | None = None,
+    frame_hashes: list[str | None] | None = None,
 ) -> list[Defect]:
     """
     Detect timestamp gaps and/or duplicate frames during motion.
@@ -49,7 +51,8 @@ def detect_stutter(
         A list of Defect objects, one per stutter event.
     """
     cfg = config or DetectorConfig()
-    pts = [p for p in track.points if p.visible]
+    visible_indices = [i for i, point in enumerate(track.points) if point.visible]
+    pts = [track.points[i] for i in visible_indices]
 
     if len(pts) < cfg.stutter_min_points:
         return []
@@ -61,13 +64,20 @@ def detect_stutter(
     dt = np.diff(ts)
     dist = np.sqrt(np.diff(cx) ** 2 + np.diff(cy) ** 2)
     # Velocity in px/s (guard against zero dt)
-    vel = np.where(dt > 0, dist / dt, 0.0)
+    contiguous = np.diff(visible_indices) == 1
+    vel = np.where((dt > 0) & contiguous, dist / dt, 0.0)
+    positive_dt = dt[dt > 0]
+    cadence_gap_threshold = (
+        min(cfg.stutter_gap_s, float(np.median(positive_dt)) * cfg.stutter_gap_multiplier)
+        if len(positive_dt)
+        else cfg.stutter_gap_s
+    )
 
     defects: list[Defect] = []
 
     # Signal A: timestamp gap while moving
     for i in range(len(dt)):
-        if dt[i] > cfg.stutter_gap_s and vel[i] > cfg.stutter_motion_px_s:
+        if dt[i] > cadence_gap_threshold and vel[i] > cfg.stutter_motion_px_s:
             severity = min(1.0, dt[i] / cfg.stutter_severity_cap_s)
             t_gap_start = float(ts[i])
             t_gap_end = float(ts[i + 1])
@@ -89,7 +99,8 @@ def detect_stutter(
 
     # Signal B: duplicate frame hashes while moving (best-effort)
     if frames:
-        defects.extend(_duplicate_frame_defects(track, ts, vel, frames, cfg))
+        hashes = frame_hashes if frame_hashes is not None else hash_frame_images(frames)
+        defects.extend(_duplicate_frame_defects(track, ts, vel, frames, cfg, hashes))
 
     # Deduplicate: remove B-signal events that overlap with an A-signal event
     defects = _deduplicate(defects)
@@ -102,22 +113,9 @@ def _duplicate_frame_defects(
     vel: np.ndarray,
     frames: list[Frame],
     cfg: DetectorConfig,
+    hashes: list[str | None],
 ) -> list[Defect]:
     """Detect duplicate frame content (Signal B)."""
-    hashes: list[str | None] = []
-    for f in frames:
-        try:
-            if not f.path.is_file():
-                hashes.append(None)
-                continue
-            image = cv2.imread(str(f.path), cv2.IMREAD_GRAYSCALE)
-            if image is None:
-                hashes.append(None)
-                continue
-            h = hashlib.sha256(image.tobytes()).hexdigest()
-            hashes.append(h)
-        except OSError:
-            hashes.append(None)
 
     defects: list[Defect] = []
 
@@ -151,6 +149,25 @@ def _duplicate_frame_defects(
         )
 
     return defects
+
+
+def hash_frame_images(frames: list[Frame]) -> list[str | None]:
+    """Hash each decoded frame once so multi-track runs avoid repeated image I/O."""
+    hashes: list[str | None] = []
+    for f in frames:
+        try:
+            if not f.path.is_file():
+                hashes.append(None)
+                continue
+            image = cv2.imread(str(f.path), cv2.IMREAD_GRAYSCALE)
+            if image is None:
+                hashes.append(None)
+                continue
+            h = hashlib.sha256(image.tobytes()).hexdigest()
+            hashes.append(h)
+        except OSError:
+            hashes.append(None)
+    return hashes
 
 
 def _deduplicate(defects: list[Defect]) -> list[Defect]:

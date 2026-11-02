@@ -13,7 +13,7 @@ from jankhunter.detect.config import DetectorConfig
 from jankhunter.detect.flicker import detect_flicker
 from jankhunter.detect.jitter import detect_jitter
 from jankhunter.detect.layout_jump import detect_layout_jump
-from jankhunter.detect.stutter import detect_stutter
+from jankhunter.detect.stutter import detect_stutter, hash_frame_images
 from jankhunter.detect.vanish import detect_vanish
 from jankhunter.models import Defect, Frame, Track
 
@@ -39,6 +39,7 @@ def detect_all(
     """
     cfg = config or DetectorConfig()
     defects: list[Defect] = []
+    frame_hashes = hash_frame_images(frames) if frames else None
 
     for track in tracks:
         log.debug("Running detectors on track '%s' (%d points)", track.label, len(track.points))
@@ -46,7 +47,7 @@ def detect_all(
         defects.extend(detect_layout_jump(track, frames, cfg))
         defects.extend(detect_flicker(track, frames, cfg))
         defects.extend(detect_vanish(track, frames, cfg))
-        defects.extend(detect_stutter(track, frames, cfg))
+        defects.extend(detect_stutter(track, frames, cfg, frame_hashes))
 
     log.info("Detected %d defects across %d tracks", len(defects), len(tracks))
     total_severity = _aggregate_severity(defects, cfg)

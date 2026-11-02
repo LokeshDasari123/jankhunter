@@ -20,6 +20,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from jankhunter.detect.config import DetectorConfig
 from jankhunter.detect.flicker import detect_flicker
 from jankhunter.detect.jitter import detect_jitter
@@ -408,6 +410,44 @@ class TestStutter:
         cfg = DetectorConfig(stutter_motion_px_s=5.0)  # high threshold → static not flagged
         defects = detect_stutter(track, frames, cfg)
         assert defects == []
+
+    def test_visibility_dropout_is_not_a_timestamp_stutter(self):
+        """A brief disappearance should not look like dropped frames during motion."""
+        clean = _make_clean_track(60, vx=5.0, vy=3.0)
+        points = [
+            TrackPoint(
+                t=point.t,
+                bbox=point.bbox,
+                centroid=point.centroid,
+                area=point.area,
+                visible=not 25 <= index <= 32,
+            )
+            for index, point in enumerate(clean.points)
+        ]
+        track = Track(id=clean.id, label=clean.label, points=points)
+
+        assert detect_stutter(track, [], _tight_config()) == []
+
+    def test_detects_short_gap_relative_to_fast_capture_rate(self):
+        """A 60 ms stall is significant in a 60 fps recording, despite <100 ms."""
+        fps = 60.0
+        clean = _make_clean_track(60, fps=fps, vx=3.0, vy=0.0)
+        points = [
+            TrackPoint(
+                t=point.t + (0.06 if index >= 30 else 0.0),
+                bbox=point.bbox,
+                centroid=point.centroid,
+                area=point.area,
+                visible=point.visible,
+            )
+            for index, point in enumerate(clean.points)
+        ]
+        stalled = Track(id=clean.id, label=clean.label, points=points)
+
+        defects = detect_stutter(stalled, _make_frames(60, fps=fps), DetectorConfig())
+
+        assert len(defects) == 1
+        assert defects[0].metric == pytest.approx(0.0767, abs=0.001)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

@@ -51,6 +51,8 @@ class DetectorConfig:
     vanish_min_gap_frames: int = 1
     vanish_drift_px: float = 20.0
     vanish_min_points: int = 4
+    # Longer hides usually represent an intentional state transition, not a blink.
+    vanish_max_gap_s: float = 0.75
 
     # ── Stutter ───────────────────────────────────────────────────────────────
     # A timestamp gap > stutter_gap_s while centroid is moving

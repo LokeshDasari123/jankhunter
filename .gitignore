@@ -26,6 +26,7 @@ htmlcov/
 .ruff_cache/
 
 # JankHunter outputs (large; don't commit captured frames or generated reports)
+runs/
 demo/*/frames/
 demo/*/defects.json
 demo/*/report.html

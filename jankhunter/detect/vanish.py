@@ -69,8 +69,9 @@ def detect_vanish(
 
         invis_end = j - 1
         gap_frames = invis_end - invis_start + 1
+        gap_seconds = pts[invis_end].t - pts[invis_start].t
 
-        if gap_frames < cfg.vanish_min_gap_frames:
+        if gap_frames < cfg.vanish_min_gap_frames or gap_seconds > cfg.vanish_max_gap_s:
             i = j
             continue
 

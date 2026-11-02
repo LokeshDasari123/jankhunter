@@ -319,6 +319,12 @@ class TestVanish:
         defects = detect_vanish(track, frames, cfg)
         assert defects == [], f"False positive vanish for off-screen exit: {defects}"
 
+    def test_long_intentional_hide_not_flagged(self):
+        """A panel hidden for several seconds and restored in place is intentional."""
+        frames = _make_frames(60)
+        track = _inject_vanish(_make_clean_track(60, vx=0.0, vy=0.0), start=10, gap=24)
+        assert detect_vanish(track, frames, DetectorConfig(vanish_max_gap_s=0.75)) == []
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Stutter tests

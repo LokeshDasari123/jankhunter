@@ -33,7 +33,7 @@ The scenario URL defaults to `http://localhost:8080`. Serve `demo/buggy` on that
 
 ## Muse Spark repair
 
-Set `MODEL_API_KEY` in the environment, then run `jankhunter fix`. JankHunter sends detected defect measurements and the buggy demo source to Muse Spark through the Meta Model API Messages endpoint. The model returns exact-text edit blocks; JankHunter constrains file paths to the repository, requires a unique match, applies the patch on a `jankhunter/fix-*` branch, and accepts only a lower severity score with no new defect type. Rejected work is reverted. Review any accepted branch before committing it.
+Set `MODEL_API_KEY` in the environment, then run `jankhunter fix`. JankHunter sends detected defect measurements, up to five evidence frames, and the buggy demo source to Muse Spark through the Meta Model API Messages endpoint. The model returns exact-text edit blocks; JankHunter constrains file paths to the repository, requires a unique match, applies the patch on a `jankhunter/fix-*` branch, and accepts only a lower severity score with no new defect type. Rejected work is reverted. Review any accepted branch before committing it.
 
 ```powershell
 $env:MODEL_API_KEY = "<your Meta Model API key>"

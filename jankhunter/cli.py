@@ -89,7 +89,8 @@ def fix(
         return defects, score
 
     diagnoser = FakeDiagnoser() if offline else MuseSparkDiagnoser()
-    result = run_fix_loop(root, before_defects, before_score, diagnoser, evaluate, max_iterations)
+    result = run_fix_loop(root, before_defects, before_score, diagnoser, evaluate,
+                          max_iterations, evidence_frames=before_frames)
     after_frames = latest.get("frames", before_frames)
     after_tracks = latest.get("tracks", before_tracks)
     after_defects = latest.get("defects", before_defects)

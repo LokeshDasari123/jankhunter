@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import subprocess
@@ -12,7 +13,7 @@ from pathlib import Path
 from typing import Protocol
 from uuid import uuid4
 
-from jankhunter.models import Defect
+from jankhunter.models import Defect, Frame
 
 
 @dataclass(frozen=True)
@@ -29,7 +30,10 @@ class Diagnosis:
 
 
 class Diagnoser(Protocol):
-    def diagnose(self, defects: list[Defect], repo_root: Path, iteration: int) -> Diagnosis: ...
+    def diagnose(
+        self, defects: list[Defect], repo_root: Path, iteration: int,
+        evidence_frames: list[Frame] | None = None,
+    ) -> Diagnosis: ...
 
 
 class MuseSparkDiagnoser:
@@ -39,7 +43,10 @@ class MuseSparkDiagnoser:
         self.model = model
         self.api_key = api_key or os.environ.get("MODEL_API_KEY")
 
-    def diagnose(self, defects: list[Defect], repo_root: Path, iteration: int) -> Diagnosis:
+    def diagnose(
+        self, defects: list[Defect], repo_root: Path, iteration: int,
+        evidence_frames: list[Frame] | None = None,
+    ) -> Diagnosis:
         if not self.api_key:
             raise RuntimeError("Set MODEL_API_KEY to use Muse Spark through Meta Model API.")
         source_files = sorted((repo_root / "demo" / "buggy").glob("*.js"))
@@ -60,6 +67,18 @@ class MuseSparkDiagnoser:
                 }},
             }, "required": ["summary", "edits"], "additionalProperties": False,
         }
+        selected_indices = sorted({index for defect in defects for index in defect.evidence})[:5]
+        frames_by_index = evidence_frames or []
+        content: list[dict[str, object]] = [{"type": "text", "text": json.dumps(context)}]
+        for index in selected_indices:
+            if 0 <= index < len(frames_by_index):
+                frame = frames_by_index[index]
+                if frame.path.is_file():
+                    media_type = "image/png" if frame.path.suffix.lower() == ".png" else "image/jpeg"
+                    encoded = base64.b64encode(frame.path.read_bytes()).decode("ascii")
+                    content.append({"type": "image", "source": {
+                        "type": "base64", "media_type": media_type, "data": encoded,
+                    }})
         body = json.dumps({
             "model": self.model,
             "max_tokens": 1800,
@@ -68,7 +87,7 @@ class MuseSparkDiagnoser:
                 "Return the smallest safe exact-text edits as JSON matching the requested schema. "
                 "Only edit demo/buggy/app.js or demo/buggy/index.html. Do not invent evidence."
             ),
-            "messages": [{"role": "user", "content": json.dumps(context)}],
+            "messages": [{"role": "user", "content": content}],
             "output_config": {"format": {"type": "json_schema", "schema": schema}},
         }).encode()
         request = urllib.request.Request(
@@ -100,7 +119,10 @@ class FakeDiagnoser:
             "sprite.x += sprite.vx * dt;\n  sprite.y += sprite.vy * dt;",
         ),)
 
-    def diagnose(self, defects: list[Defect], repo_root: Path, iteration: int) -> Diagnosis:
+    def diagnose(
+        self, defects: list[Defect], repo_root: Path, iteration: int,
+        evidence_frames: list[Frame] | None = None,
+    ) -> Diagnosis:
         return Diagnosis("Offline fixture patch for the demo's fixed-step motion bug.", self.edits)
 
 
@@ -154,6 +176,7 @@ def run_fix_loop(
     evaluate,
     max_iterations: int = 3,
     rebuild_command: tuple[str, ...] | None = None,
+    evidence_frames: list[Frame] | None = None,
 ) -> LoopResult:
     """Create a fix branch, evaluate proposed edits, and restore rejected changes."""
     root = repo_root.resolve()
@@ -174,7 +197,7 @@ def run_fix_loop(
     current_defects = defects
     for number in range(1, max_iterations + 1):
         try:
-            diagnosis = diagnoser.diagnose(current_defects, root, number)
+            diagnosis = diagnoser.diagnose(current_defects, root, number, evidence_frames)
             if not diagnosis.edits:
                 history.append(Iteration(number, diagnosis.summary, current_score, None,
                                          sorted(current_types), [], False, "", "Diagnoser returned no edits"))

@@ -50,12 +50,22 @@ def detect_layout_jump(
     if len(disp) == 0:
         return []
 
-    median_disp = float(np.median(disp))
-    if median_disp == 0:
-        median_disp = 1e-6  # avoid division by zero for static elements
+    # Stationary intervals are common (for example, a menu between clicks).
+    # Including those zeroes makes the baseline collapse to epsilon and turns
+    # the first frame of any normal motion into a false layout jump.
+    moving_disp = disp[disp > 0.0]
+    if len(moving_disp) == 0:
+        return []
+    median_disp = float(np.median(moving_disp))
 
-    jump_threshold = median_disp * cfg.jump_multiplier
-    low_vel_threshold = median_disp * cfg.jump_low_velocity_fraction
+    if len(moving_disp) == 1:
+        # A single abrupt change on an otherwise static track has no moving
+        # baseline, so use an absolute pixel threshold for this special case.
+        jump_threshold = cfg.jump_static_threshold_px
+        low_vel_threshold = cfg.jump_static_threshold_px * cfg.jump_low_velocity_fraction
+    else:
+        jump_threshold = median_disp * cfg.jump_multiplier
+        low_vel_threshold = median_disp * cfg.jump_low_velocity_fraction
 
     defects: list[Defect] = []
 

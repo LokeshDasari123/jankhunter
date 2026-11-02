@@ -236,6 +236,21 @@ class TestLayoutJump:
         defects = detect_layout_jump(clean, frames, DetectorConfig())
         assert defects == [], f"False positive layout_jump: {defects}"
 
+    def test_no_false_positive_for_smooth_motion_after_pause(self):
+        """An animation easing into motion after a pause is not a layout jump."""
+        frames = _make_frames(60)
+        track = _make_clean_track(60, vx=0.0, vy=0.0)
+        points = []
+        x = 100.0
+        for i, point in enumerate(track.points):
+            if i >= 20:
+                x += min((i - 19) * 0.5, 5.0)
+            points.append(TrackPoint(t=point.t, bbox=point.bbox,
+                                     centroid=(x, point.centroid[1]), area=point.area,
+                                     visible=point.visible))
+        eased = Track(id=track.id, label=track.label, points=points)
+        assert detect_layout_jump(eased, frames, DetectorConfig()) == []
+
     def test_static_element_not_flagged(self):
         """A perfectly static element → no jump (median displacement = 0)."""
         frames = _make_frames(60)

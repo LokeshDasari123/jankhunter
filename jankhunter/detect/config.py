@@ -36,6 +36,8 @@ class DetectorConfig:
     jump_multiplier: float = 5.0
     jump_low_velocity_fraction: float = 0.5
     jump_min_points: int = 4
+    # Minimum abrupt displacement for an otherwise stationary element.
+    jump_static_threshold_px: float = 12.0
 
     # ── Flicker ───────────────────────────────────────────────────────────────
     # In a sliding window of `flicker_window` frames, count how many times the

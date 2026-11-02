@@ -30,7 +30,7 @@ The default tracker is `mock`. It reads the demo's `gt.json` sidecar, so it is u
 .venv\Scripts\python.exe -m jankhunter.cli detect demo/scenario.json --frames runs/capture --tracker meta-sam --out runs/sam-detect
 ```
 
-The example asks SAM 3.1 to track one concept, `cyan game sprite`. SAM accepts one noun phrase per request; add more phrases to `sam_prompts` only when you want the extra requests. The uploaded video is sampled to at most 120 frames and deleted after the request. SAM requires at least 50 video frames. See Meta's [SAM segmenting guide](https://dev.meta.ai/docs/sam/segmenting) and [Python parser guide](https://dev.meta.ai/docs/sam/client-libraries) for the request and response formats.
+The scenario seeds the sprite and HUD with manual bounding boxes. SAM 3.1 tracks both IDs in one request; the boxes are scenario inputs, not read from the app's ground-truth sidecar. You can also use `sam_prompts` for short noun phrases, with one request per phrase. The uploaded video is sampled to at most 120 frames and deleted after the request. SAM requires at least 50 video frames. See Meta's [SAM segmenting guide](https://dev.meta.ai/docs/sam/segmenting) and [Python parser guide](https://dev.meta.ai/docs/sam/client-libraries) for the request and response formats.
 
 ## Try the offline fix loop
 
@@ -96,7 +96,9 @@ The static vanilla-JavaScript demo is served with Python's built-in HTTP server.
 ## Limits
 
 - SAM returns boxes on sampled frames, not calibrated measurements. Small or visually ambiguous objects may be missed, merged, or assigned a different ID. Detector confidence depends on the tracking result and capture cadence.
-- The sample scenario focuses on one sprite. Reliable tracking of several objects requires carefully chosen phrases and separate requests; the current prototype has not been validated across real games or browsers.
+- A live run on the included synthetic demo tracked the seeded sprite and HUD in one request and detected 14 stutter events, two flickers, one vanish, and one HUD jump. This is evidence that the path works on this demo, not a benchmark of other apps.
+- Seed boxes must line up with the chosen viewport and sampled frame. The current scenario uses frame 0 in a 1280×720 viewport; the seed box is an input supplied by the user, not an automatically inferred region.
+- The demo seeds two objects by hand. Other objects need their own seed boxes or carefully chosen noun phrases; the current prototype has not been validated across real games or browsers.
 - Muse Spark proposes code edits. A falling detector score on one scripted run does not prove the patch is correct or safe. Inspect the diff and repeat with additional scenarios before shipping.
 - The demo and tests establish a working research prototype, not production readiness or a guaranteed reduction in real-world incidents.
 

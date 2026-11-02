@@ -16,7 +16,8 @@ Signal B — Duplicate frames (pixel hash):
   If the capture module has recorded frames, consecutive identical-looking frames
   while centroid velocity > threshold indicate the renderer stalled.
   NOTE: Signal B is only active when frames are provided and frame files exist.
-  It computes a quick spatial sub-sample hash without loading the full image.
+  It hashes the decoded grayscale frame so small moving elements are not lost
+  to thumbnail downsampling.
 
 Each qualifying event becomes a separate Defect. Events from both signals are
 merged by proximity before returning.
@@ -113,8 +114,7 @@ def _duplicate_frame_defects(
             if image is None:
                 hashes.append(None)
                 continue
-            thumb = cv2.resize(image, (32, 18), interpolation=cv2.INTER_AREA)
-            h = hashlib.sha256(thumb.tobytes()).hexdigest()
+            h = hashlib.sha256(image.tobytes()).hexdigest()
             hashes.append(h)
         except OSError:
             hashes.append(None)

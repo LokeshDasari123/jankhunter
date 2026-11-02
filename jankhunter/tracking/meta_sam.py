@@ -8,11 +8,19 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-from meta_sam_parser import CompletedOutcome, SegmentationBoxRecord, video_segmentation_format
+from meta_sam_parser import (
+    CompletedOutcome,
+    FramePrompt,
+    PromptBox,
+    PromptObject,
+    SegmentationBoxRecord,
+    build_object_prompt,
+    video_segmentation_format,
+)
 from openai import OpenAI
 
 from jankhunter.config import model_api_key
-from jankhunter.models import Frame, Track, TrackPoint
+from jankhunter.models import Frame, SAMSeed, Track, TrackPoint
 from jankhunter.tracking.base import Tracker
 
 SAM_BASE_URL = "https://api.meta.ai/v1"
@@ -52,7 +60,11 @@ def _write_video(frames: list[Frame], path: Path) -> tuple[int, int]:
 
 
 def _tracks_from_result(
-    records: tuple[object, ...], prompt: str, sampled: list[Frame], width: int, height: int
+    records: tuple[object, ...],
+    labels: str | dict[str, str],
+    sampled: list[Frame],
+    width: int,
+    height: int,
 ) -> list[Track]:
     by_id: dict[str, dict[int, TrackPoint]] = {}
     for record in records:
@@ -79,16 +91,39 @@ def _tracks_from_result(
             or TrackPoint(t=frame.t, bbox=(0, 0, 0, 0), centroid=(0.0, 0.0), area=0, visible=False)
             for i, frame in enumerate(sampled)
         ]
-        tracks.append(Track(id=f"sam-{object_id}", label=prompt, points=full_points))
+        label = labels if isinstance(labels, str) else labels.get(object_id, f"object {object_id}")
+        tracks.append(Track(id=f"sam-{object_id}", label=label, points=full_points))
     return tracks
 
 
-class MetaSAMTracker(Tracker):
-    """Track one or more visual concepts using Meta SAM 3.1.
+def _build_seed_prompt(
+    seeds: list[SAMSeed], width: int, height: int, frame_count: int
+) -> tuple[str, dict[str, str]]:
+    if not seeds:
+        raise ValueError("SAM seeded tracking requires at least one seed box.")
+    if len({seed.id for seed in seeds}) != len(seeds):
+        raise ValueError("SAM seed ids must be unique.")
+    objects: list[PromptObject] = []
+    labels: dict[str, str] = {}
+    for seed in seeds:
+        x, y, box_width, box_height = seed.bbox
+        if x + box_width > width or y + box_height > height:
+            raise ValueError(f"SAM seed box {seed.id} falls outside the captured viewport.")
+        if seed.frame >= frame_count:
+            raise ValueError(f"SAM seed frame {seed.frame} is outside the sampled video.")
+        objects.append(PromptObject(
+            id=seed.id,
+            prompts=[FramePrompt(
+                frame=seed.frame,
+                box=PromptBox(x, y, x + box_width, y + box_height),
+            )],
+        ))
+        labels[str(seed.id)] = seed.label
+    return build_object_prompt(size=(width, height), objects=objects), labels
 
-    Each noun phrase is a separate SAM request. For predictable cost, pass only
-    the element needed for the current analysis.
-    """
+
+class MetaSAMTracker(Tracker):
+    """Track prompted concepts or manually seeded objects using Meta SAM 3.1."""
 
     def __init__(self, api_key: str | None = None) -> None:
         self._api_key = api_key or model_api_key()
@@ -101,45 +136,82 @@ class MetaSAMTracker(Tracker):
         sampled = _sample_frames(frames)
         tracks: list[Track] = []
         for prompt in prompts:
-            with tempfile.TemporaryDirectory(prefix="jankhunter-sam-") as temp_dir:
-                video_path = Path(temp_dir) / "capture.mp4"
-                width, height = _write_video(sampled, video_path)
-                client = OpenAI(api_key=self._api_key, base_url=SAM_BASE_URL)
-                uploaded = None
-                try:
-                    with video_path.open("rb") as video_file:
-                        uploaded = client.files.create(
-                            file=video_file,
-                            purpose="user_data",
-                            expires_after={"anchor": "created_at", "seconds": 3600},
-                        )
-                    parsed_stream = video_segmentation_format().create_parser()
-                    with client.responses.stream(
-                        model=SAM_MODEL,
-                        input=[{
-                            "type": "message",
-                            "role": "user",
-                            "content": [
-                                {"type": "input_text", "text": prompt},
-                                {"type": "input_video", "file_id": uploaded.id},
-                            ],
-                        }],
-                        metadata={"include_confidence": "true"},
-                    ) as stream:
-                        completed = False
-                        for event in stream:
-                            if event.type == "response.output_text.delta":
-                                parsed_stream.push(event.delta, emit=False)
-                            elif event.type == "response.completed":
-                                completed = True
-                        outcome = CompletedOutcome() if completed else None
-                    if outcome is None:
-                        raise RuntimeError("SAM response ended before response.completed.")
-                    result = parsed_stream.finish(outcome).result
-                    tracks.extend(_tracks_from_result(result.records, prompt, sampled, width, height))
-                finally:
-                    if uploaded is not None:
-                        with suppress(Exception):
-                            client.files.delete(uploaded.id)
-                    client.close()
+            tracks.extend(self._track_video(sampled, prompt, prompt))
         return tracks
+
+    def track_seeded(self, frames: list[Frame], seeds: list[SAMSeed]) -> list[Track]:
+        """Track manually marked objects together in one SAM request."""
+        if not seeds:
+            raise ValueError("SAM seeded tracking requires at least one seed box.")
+        if len({seed.id for seed in seeds}) != len(seeds):
+            raise ValueError("SAM seed ids must be unique.")
+        sampled = _sample_frames(frames)
+        with tempfile.TemporaryDirectory(prefix="jankhunter-sam-") as temp_dir:
+            video_path = Path(temp_dir) / "capture.mp4"
+            width, height = _write_video(sampled, video_path)
+            prompt, labels = _build_seed_prompt(seeds, width, height, len(sampled))
+            return self._send_video(sampled, prompt, labels, width, height, video_path, True)
+
+    def _track_video(
+        self,
+        sampled: list[Frame],
+        prompt: str,
+        labels: str | dict[str, str],
+        *,
+        forward: bool = False,
+    ) -> list[Track]:
+        with tempfile.TemporaryDirectory(prefix="jankhunter-sam-") as temp_dir:
+            video_path = Path(temp_dir) / "capture.mp4"
+            width, height = _write_video(sampled, video_path)
+            return self._send_video(sampled, prompt, labels, width, height, video_path, forward)
+
+    def _send_video(
+        self,
+        sampled: list[Frame],
+        prompt: str,
+        labels: str | dict[str, str],
+        width: int,
+        height: int,
+        video_path: Path,
+        forward: bool,
+    ) -> list[Track]:
+        client = OpenAI(api_key=self._api_key, base_url=SAM_BASE_URL)
+        uploaded = None
+        try:
+            with video_path.open("rb") as video_file:
+                uploaded = client.files.create(
+                    file=video_file,
+                    purpose="user_data",
+                    expires_after={"anchor": "created_at", "seconds": 3600},
+                )
+            metadata = {"include_confidence": "true"}
+            if forward:
+                metadata["propagation_direction"] = "forward"
+            parsed_stream = video_segmentation_format().create_parser()
+            with client.responses.stream(
+                model=SAM_MODEL,
+                input=[{
+                    "type": "message",
+                    "role": "user",
+                    "content": [
+                        {"type": "input_text", "text": prompt},
+                        {"type": "input_video", "file_id": uploaded.id},
+                    ],
+                }],
+                metadata=metadata,
+            ) as stream:
+                completed = False
+                for event in stream:
+                    if event.type == "response.output_text.delta":
+                        parsed_stream.push(event.delta, emit=False)
+                    elif event.type == "response.completed":
+                        completed = True
+            if not completed:
+                raise RuntimeError("SAM response ended before response.completed.")
+            result = parsed_stream.finish(CompletedOutcome()).result
+            return _tracks_from_result(result.records, labels, sampled, width, height)
+        finally:
+            if uploaded is not None:
+                with suppress(Exception):
+                    client.files.delete(uploaded.id)
+            client.close()

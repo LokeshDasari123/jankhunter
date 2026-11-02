@@ -25,14 +25,16 @@
 - Added a deterministic offline diagnoser to exercise the loop without credentials and a Muse Spark Diagnoser using Meta's current Messages API contract (`muse-spark-1.3`, `MODEL_API_KEY`). API schema was verified against official docs rather than guessed.
 - Added a self-contained HTML report with an embedded trajectory plot, evidence frames, defects, patch diff, and iteration history.
 - Demo app now retains per-frame sidecar samples; Playwright context records video for the documented ffmpeg fallback.
-- **Honest limitation:** SAM video tracking remains unimplemented pending a verified API schema. This release's complete demo uses the sidecar mock and should be presented as a prototype, not production-ready perception.
+- **Status at this point in the build:** SAM video tracking was still a stub; the subsequent section records its implementation and live demo validation.
 - **Ambiguity resolved:** `fix` compares the weighted detector severity and defect-type set across recordings of the same scenario. This is a regression gate, not proof that the patch is correct for all interactions.
-- Added local `.env` loading for `MODEL_API_KEY`; the ignored file is never logged. To limit request cost, the Muse call has a 1,200-token output cap and sends at most two resized evidence frames plus only the source file it may edit.
+- Added local `.env` loading for `MODEL_API_KEY`; the ignored file is never logged. Muse receives at most two resized evidence frames and only the source file it may edit.
 
 ### Meta tracker and packaging
 - Implemented the documented SAM 3.1 Responses API video path with `meta-sam-parser`; a local video writer samples 50–120 captured frames, maps returned boxes back to capture timestamps, and requests server-side deletion of the uploaded clip after processing.
-- Added `detect --tracker meta-sam`; ordinary capture/detect and no-key tests continue to use `MockTracker` unless selected explicitly. The online fix loop uses SAM; `--offline` stays local.
+- Added `detect --tracker meta-sam`; ordinary capture/detect and no-key tests continue to use `MockTracker` unless selected explicitly. The online fix loop uses SAM; `--offline` stays local. Seed boxes let one SAM request track several named objects in the same clip.
 - Added `.env.example` and a plain `requirements.txt` for Python 3.11 virtual environments. Rewrote README to distinguish measured behavior from unverified claims and to document capture-rate and model limits.
-- Added offline tests for SAM frame limits, MP4 creation, and parsed box-to-track conversion. No model API request was made while implementing these changes.
-- **Remaining limitation:** SAM returns sampled observations; temporal events between samples can be missed. The live account/API path still needs one deliberate end-to-end validation before submission.
+- Added offline tests for SAM frame limits, MP4 creation, parsed box-to-track conversion, and multi-object prompt construction.
+- Live validation on the saved demo: one seeded SAM request returned tracks for both the sprite and HUD; the detectors found 18 signals (14 stutter, 2 flicker, 1 vanish, 1 layout jump). Replacing thumbnail hashes with full-resolution frame hashes removed 30 stutter flags from the one-object run while preserving real repeated-frame signals.
+- Muse Spark returned four candidate edit blocks after reducing the request to one representative defect per type and setting low reasoning effort with a 4,096-token ceiling. The edit was not applied. Fresh Playwright recapture is blocked in this execution environment because loopback sockets are denied, so the patch has not passed the acceptance loop here.
+- **Remaining limitation:** SAM sees sampled frames; events between samples can be missed. The live tracker has been exercised only on the included synthetic app.
 - **Correction:** SAM API schema is now implemented against Meta's published documentation. The earlier entry above accurately records the prior state, not the current repository state.

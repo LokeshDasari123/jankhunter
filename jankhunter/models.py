@@ -113,6 +113,24 @@ class MouseMoveAction(BaseModel):
     steps: int = Field(default=10, description="Number of intermediate mouse-move steps")
 
 
+class SAMSeed(BaseModel):
+    """A user-marked box that seeds one object in a SAM video request."""
+
+    id: int = Field(..., ge=0)
+    label: str
+    bbox: tuple[int, int, int, int] = Field(
+        ..., description="Seed box (x, y, width, height) in viewport pixels"
+    )
+    frame: int = Field(default=0, ge=0, description="Sampled video frame to place the seed on")
+
+    @field_validator("bbox")
+    @classmethod
+    def _positive_bbox(cls, value: tuple[int, int, int, int]) -> tuple[int, int, int, int]:
+        if value[0] < 0 or value[1] < 0 or value[2] <= 0 or value[3] <= 0:
+            raise ValueError("SAM seed boxes need non-negative origins and positive size")
+        return value
+
+
 # Discriminated union of all action types
 Action = WaitAction | ClickAction | KeyAction | MouseMoveAction
 
@@ -138,4 +156,8 @@ class Scenario(BaseModel):
     sam_prompts: list[str] = Field(
         default_factory=list,
         description="Short SAM noun phrases; each phrase triggers one video request",
+    )
+    sam_seeds: list[SAMSeed] = Field(
+        default_factory=list,
+        description="Optional manual boxes for tracking several objects in one SAM request",
     )

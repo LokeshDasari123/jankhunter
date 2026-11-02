@@ -39,6 +39,16 @@ class Diagnoser(Protocol):
     ) -> Diagnosis: ...
 
 
+def _representative_defects(defects: list[Defect]) -> list[Defect]:
+    """Keep the highest-severity example of each kind for the model prompt."""
+    representatives: dict[str, Defect] = {}
+    for defect in defects:
+        current = representatives.get(defect.type)
+        if current is None or defect.severity > current.severity:
+            representatives[defect.type] = defect
+    return sorted(representatives.values(), key=lambda item: item.severity, reverse=True)
+
+
 class MuseSparkDiagnoser:
     """Muse Spark Diagnoser using Meta Model API's documented Messages endpoint."""
 
@@ -56,7 +66,11 @@ class MuseSparkDiagnoser:
             )
         app_source = repo_root / "demo" / "buggy" / "app.js"
         context = {
-            "defects": [defect.model_dump(mode="json") for defect in defects],
+            "defect_count": len(defects),
+            "defects": [
+                defect.model_dump(mode="json")
+                for defect in _representative_defects(defects)
+            ],
             "source": {str(app_source.relative_to(repo_root)): app_source.read_text(encoding="utf-8")},
             "iteration": iteration,
         }
@@ -90,14 +104,18 @@ class MuseSparkDiagnoser:
                     }})
         body = json.dumps({
             "model": self.model,
-            "max_tokens": 1200,
+            "max_tokens": 4096,
             "system": (
                 "Diagnose temporal visual bugs from deterministic detector evidence and source. "
                 "Return the smallest safe exact-text edits as JSON matching the requested schema. "
                 "Only edit demo/buggy/app.js. Do not invent evidence."
             ),
             "messages": [{"role": "user", "content": content}],
-            "output_config": {"format": {"type": "json_schema", "schema": schema}},
+            "output_config": {
+                "effort": "low",
+                "format": {"type": "json_schema", "schema": schema},
+            },
+            "thinking": {"type": "adaptive"},
         }).encode()
         request = urllib.request.Request(
             "https://api.meta.ai/v1/messages", data=body,
@@ -109,7 +127,17 @@ class MuseSparkDiagnoser:
                 payload = json.loads(response.read())
         except urllib.error.HTTPError as exc:
             raise RuntimeError(f"Meta Model API request failed (HTTP {exc.code}).") from exc
-        answer = "".join(block.get("text", "") for block in payload.get("content", []) if block.get("type") == "text")
+        answer = "".join(
+            block.get("text", "")
+            for block in payload.get("content", [])
+            if block.get("type") == "text"
+        ) or payload.get("output_text", "")
+        if not answer.strip():
+            stop_reason = payload.get("stop_reason", "unknown")
+            raise ValueError(
+                "Muse Spark returned no text edit proposal "
+                f"(stop_reason={stop_reason}); reduce input size or increase max_tokens."
+            )
         try:
             data = json.loads(answer)
             return Diagnosis(data["summary"], tuple(EditBlock(**edit) for edit in data["edits"]))

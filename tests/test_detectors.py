@@ -364,6 +364,26 @@ class TestStutter:
         assert defects
         assert all(defect.track_id == "moving" for defect in defects)
 
+    def test_small_motion_is_not_an_image_duplicate(self, tmp_path):
+        """A one-pixel sprite move must survive the duplicate-frame comparison."""
+        import cv2
+        import numpy as np
+
+        frames = []
+        for i in range(4):
+            image = np.zeros((64, 64, 3), dtype=np.uint8)
+            image[24:28, 20 + i : 24 + i] = 255
+            path = tmp_path / f"moving_{i}.jpg"
+            assert cv2.imwrite(str(path), image)
+            frames.append(Frame(t=i * 0.05, path=path))
+        track = _make_clean_track(4, fps=20.0, vx=20.0, track_id="moving", label="sprite")
+
+        assert detect_stutter(
+            track,
+            frames,
+            DetectorConfig(stutter_min_points=4, stutter_motion_px_s=10.0),
+        ) == []
+
     def test_detects_timestamp_gap_during_motion(self):
         """Large timestamp gap while element is moving → stutter defect."""
         frames = _make_frames(60)

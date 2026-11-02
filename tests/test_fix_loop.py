@@ -8,7 +8,13 @@ from pathlib import Path
 
 from PIL import Image
 
-from jankhunter.fix.loop import EditBlock, FakeDiagnoser, MuseSparkDiagnoser, run_fix_loop
+from jankhunter.fix.loop import (
+    EditBlock,
+    FakeDiagnoser,
+    MuseSparkDiagnoser,
+    _representative_defects,
+    run_fix_loop,
+)
 from jankhunter.models import Defect, Frame
 
 
@@ -34,6 +40,14 @@ def _fake_git(monkeypatch):
 def _defect() -> Defect:
     return Defect(type="jitter", track_id="sprite", label="sprite", t_start=0, t_end=1,
                   severity=0.5, metric=3.0)
+
+
+def test_model_context_keeps_worst_defect_per_type():
+    jitter = _defect()
+    severe_jitter = jitter.model_copy(update={"severity": 0.9, "metric": 8.0})
+    vanish = jitter.model_copy(update={"type": "vanish", "severity": 0.4})
+
+    assert _representative_defects([jitter, severe_jitter, vanish]) == [severe_jitter, vanish]
 
 
 def test_loop_accepts_fake_diagnoser_patch(tmp_path: Path, monkeypatch):

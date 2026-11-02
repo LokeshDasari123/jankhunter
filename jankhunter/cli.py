@@ -25,9 +25,12 @@ def _load_scenario(path: Path) -> Scenario:
 
 def _track(frames: list[Frame], scenario: Scenario, tracker: str) -> list[Track]:
     if tracker == "meta-sam":
+        sam_tracker = MetaSAMTracker()
+        if scenario.sam_seeds:
+            return sam_tracker.track_seeded(frames, scenario.sam_seeds)
         if not scenario.sam_prompts:
-            raise typer.BadParameter("Scenario must include sam_prompts for Meta SAM 3.1.")
-        return MetaSAMTracker().track(frames, scenario.sam_prompts)
+            raise typer.BadParameter("Scenario must include sam_seeds or sam_prompts for Meta SAM 3.1.")
+        return sam_tracker.track(frames, scenario.sam_prompts)
     if not scenario.prompt_labels:
         raise typer.BadParameter("Scenario must include prompt_labels for MockTracker.")
     return MockTracker().track(frames, scenario.prompt_labels)

@@ -3,7 +3,10 @@
   "viewport": { "width": 1280, "height": 720 },
   "duration": 12.0,
   "prompt_labels": ["sprite", "hud_bar", "menu_panel", "line_chart"],
-  "sam_prompts": ["cyan game sprite"],
+  "sam_seeds": [
+    { "id": 1, "label": "sprite", "bbox": [162, 134, 50, 50], "frame": 0 },
+    { "id": 2, "label": "HUD bar", "bbox": [12, 12, 116, 32], "frame": 0 }
+  ],
   "actions": [
     { "type": "wait", "duration": 2.0 },
     { "type": "mouse_move", "x": 640, "y": 360, "steps": 20 },

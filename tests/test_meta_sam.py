@@ -5,10 +5,11 @@ import numpy as np
 import pytest
 from meta_sam_parser import CompletedOutcome, video_segmentation_format
 
-from jankhunter.models import Frame
+from jankhunter.models import Frame, SAMSeed
 from jankhunter.tracking.meta_sam import (
     MAX_VIDEO_FRAMES,
     MIN_VIDEO_FRAMES,
+    _build_seed_prompt,
     _sample_frames,
     _tracks_from_result,
     _write_video,
@@ -64,3 +65,29 @@ def test_parser_boxes_become_tracks_on_original_timestamps(tmp_path: Path) -> No
     assert tracks[0].points[0].bbox == (3, 4, 10, 12)
     assert tracks[0].points[0].visible
     assert tracks[0].points[1].visible is False
+
+
+def test_multiple_seed_boxes_share_one_sam_prompt() -> None:
+    prompt, labels = _build_seed_prompt(
+        [
+            SAMSeed(id=1, label="sprite", bbox=(10, 20, 30, 40), frame=0),
+            SAMSeed(id=2, label="HUD", bbox=(50, 5, 100, 25), frame=4),
+        ],
+        width=320,
+        height=240,
+        frame_count=20,
+    )
+
+    assert "<0f>1<|box;x1=10;y1=20;x2=39;y2=59;w=320;h=240|>" in prompt
+    assert "<4f>2<|box;x1=50;y1=5;x2=149;y2=29;w=320;h=240|>" in prompt
+    assert labels == {"1": "sprite", "2": "HUD"}
+
+
+def test_seed_box_outside_frame_is_rejected() -> None:
+    with pytest.raises(ValueError, match="outside the captured viewport"):
+        _build_seed_prompt(
+            [SAMSeed(id=1, label="sprite", bbox=(90, 10, 20, 20))],
+            width=100,
+            height=100,
+            frame_count=60,
+        )
